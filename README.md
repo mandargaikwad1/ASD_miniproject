@@ -1,117 +1,94 @@
-# Task API: an end-to-end DevOps mini project
+# Online Quiz Web Application
 
-Build and deliver a small HTTP API using an automated pipeline. This project demonstrates source control, automated testing, containerization, CI, image publishing, and local deployment without requiring a cloud account.
+A responsive, browser-based multiple-choice quiz about DevOps fundamentals. The application includes five questions, tracks answer progress, grades submissions on the server, and shows the score and explanations when finished. It is also a hands-on end-to-end DevOps mini project.
 
-## What it does
+## Run locally
 
-- `GET /healthz` — container and service health check
-- `GET /api/tasks` — list tasks
-- `POST /api/tasks` — create a task with a JSON `title`
-- `DELETE /api/tasks/:id` — delete a task
-
-Tasks are stored in memory, so they reset when the service restarts. That keeps the exercise focused on the delivery pipeline rather than database setup.
-
-## Step-by-step pipeline
-
-### 1. Run the application locally
-
-Requires Node.js 22 or later.
+Requires Node.js 22 or later. No npm packages are required.
 
 ```powershell
 npm start
 ```
 
-In another PowerShell window, check the health endpoint and create a task:
+Open **http://localhost:3000/** to take the quiz. The API health check is available at **http://localhost:3000/healthz**.
 
-```powershell
-Invoke-RestMethod http://localhost:3000/healthz
-Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/tasks `
-  -ContentType "application/json" -Body '{"title":"Build my first pipeline"}'
-Invoke-RestMethod http://localhost:3000/api/tasks
-```
+## Run automated tests
 
-### 2. Run automated tests
+In another terminal:
 
 ```powershell
 npm test
 ```
 
-The tests use Node's built-in test runner and exercise health, task creation/listing/deletion, and invalid input. No npm packages are needed.
+The tests cover the web page, health endpoint, answer secrecy, scoring, invalid submissions, malformed JSON, and unknown routes.
 
-### 3. Build and run the container
+## Build and run with Docker
 
-Install Docker Desktop, then run:
+Install and start Docker Desktop, then run from this project folder:
 
 ```powershell
 docker compose up --build
 ```
 
-Visit `http://localhost:3000/healthz`. Stop the service with `Ctrl+C`, or run `docker compose down` in another terminal.
+Open **http://localhost:3000/**. Stop the service with `Ctrl+C`, or use `docker compose down` from another terminal.
 
-### 4. Put the project on GitHub
+## GitHub Actions CI/CD
 
-Create an empty GitHub repository, then from this project folder:
+The workflow in `.github/workflows/pipeline.yml` runs on pushes and pull requests targeting `main`:
 
-```powershell
-git init
-git add .
-git commit -m "Build Task API DevOps mini project"
-git branch -M main
-git remote add origin https://github.com/YOUR-USER/YOUR-REPOSITORY.git
-git push -u origin main
-```
+1. Check out the source and set up Node.js 22.
+2. Run `npm test`.
+3. Build the Docker image after tests pass.
+4. Publish the image to GitHub Container Registry (GHCR) on pushes to `main`, using commit-SHA and `latest` tags.
 
-Replace the remote URL with your repository URL. The workflow in `.github/workflows/pipeline.yml` runs automatically after the push.
+Pull requests run tests and build the image without publishing it. The publish job uses GitHub's automatically provided `GITHUB_TOKEN`; no long-lived registry credential is required.
 
-### 5. Follow the CI/CD run
+### Practice the pipeline
 
-In GitHub, open **Actions** and select **DevOps pipeline**:
+1. Create a feature branch and make a small change.
+2. Run `npm test` locally.
+3. Push the branch and open a pull request targeting `main`.
+4. Review the **Actions** checks and merge after they pass.
+5. Check the next `main` workflow run and GHCR package for the published image.
 
-1. The test job runs `npm test`.
-2. The image job builds the Docker image only after tests pass.
-3. On pushes to `main`, GitHub Actions authenticates to GHCR using the automatically provided `GITHUB_TOKEN` and publishes the image as `ghcr.io/OWNER/REPOSITORY:latest` and a commit-SHA tag.
-4. On pull requests, it runs tests and builds the image but does not publish it.
+## Run the published image
 
-The workflow grants package-write permission only to the image job. No long-lived registry credentials are stored in repository secrets.
-
-### 6. Deploy the published image locally
-
-After a successful push to `main`, pull and run the published image (replace `OWNER/REPOSITORY`):
+After the workflow publishes the package, replace `OWNER/REPOSITORY` with your GitHub owner and repository:
 
 ```powershell
 docker pull ghcr.io/OWNER/REPOSITORY:latest
 docker run --rm -p 3000:3000 ghcr.io/OWNER/REPOSITORY:latest
 ```
 
-If the package is private, authenticate first with `docker login ghcr.io`. For a public package, no login is needed. The image's health check probes `/healthz`.
+If the package is private, authenticate to GHCR first. Then open **http://localhost:3000/**.
 
-## Pipeline at a glance
+## API
+
+- `GET /` — quiz web application
+- `GET /healthz` — readiness and container health check
+- `GET /api/quiz` — quiz title, questions, and options (answer key is not exposed)
+- `POST /api/quiz/submit` — submit answers as `{"answers":{"q1":"b"}}` and receive a server-calculated score and explanations
+
+Submissions are not persisted. Refreshing or restarting the application does not retain quiz results.
+
+## Pipeline overview
 
 ```text
-Commit / pull request
-        |
-        v
-   npm test
-        |
-        v
- Docker image build
-        |
-        +---- pull request: validate only
-        |
-        +---- push to main: publish SHA + latest tags to GHCR
-                                      |
-                                      v
-                              Run image with Docker
+Pull request or push to main
+              |
+              v
+       Run automated tests
+              |
+              v
+         Build image
+              |
+        +-----+------+
+        |            |
+   Pull request   Push to main
+   build only         |
+                     v
+                Publish to GHCR
+                     |
+                     v
+             Run container locally
 ```
-
-## Suggested extensions
-
-- Add a database and integration tests.
-- Add linting and dependency/security scanning.
-- Deploy the image to a cloud platform after choosing a provider and configuring its credentials.
-- Add staging and production environments with approvals.
-#   A S D _ p r o j e c t 
- 
- #   A S D _ m i n i p r o j e c t 
- 
- 

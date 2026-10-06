@@ -17,50 +17,64 @@ after(async () => {
   });
 });
 
+test("home page serves the online quiz interface", async () => {
+  const response = await fetch(baseUrl);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type"), /text\/html/);
+  assert.match(await response.text(), /Submit answers/);
+});
+
 test("health endpoint reports that the service is ready", async () => {
   const response = await fetch(`${baseUrl}/healthz`);
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { status: "ok" });
 });
 
-test("tasks can be created, listed, and deleted", async () => {
-  const createResponse = await fetch(`${baseUrl}/api/tasks`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ title: "Learn CI/CD" })
-  });
-
-  assert.equal(createResponse.status, 201);
-  const { task } = await createResponse.json();
-  assert.equal(task.title, "Learn CI/CD");
-  assert.ok(task.id);
-  assert.ok(task.createdAt);
-
-  const listResponse = await fetch(`${baseUrl}/api/tasks`);
-  assert.deepEqual(await listResponse.json(), { tasks: [task] });
-
-  const deleteResponse = await fetch(`${baseUrl}/api/tasks/${task.id}`, { method: "DELETE" });
-  assert.equal(deleteResponse.status, 204);
-
-  const emptyListResponse = await fetch(`${baseUrl}/api/tasks`);
-  assert.deepEqual(await emptyListResponse.json(), { tasks: [] });
+test("public quiz questions do not disclose correct answers", async () => {
+  const response = await fetch(`${baseUrl}/api/quiz`);
+  const quiz = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(quiz.questions.length, 5);
+  assert.ok(quiz.questions.every((question) =>
+    question.id && question.text && question.options.length === 4 &&
+    !Object.hasOwn(question, "correctOptionId") &&
+    !Object.hasOwn(question, "explanation")
+  ));
 });
 
-test("invalid task input receives a useful client error", async () => {
-  for (const body of [{ title: "   " }, null, { title: "x".repeat(121) }]) {
-    const response = await fetch(`${baseUrl}/api/tasks`, {
+test("submission is graded on the server and returns explanations", async () => {
+  const response = await fetch(`${baseUrl}/api/quiz/submit`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ answers: { q1: "b", q2: "a", q3: "b" } })
+  });
+  const result = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(result.score, 2);
+  assert.equal(result.total, 5);
+  assert.equal(result.percentage, 40);
+  assert.equal(result.results.length, 5);
+  assert.equal(result.results[0].isCorrect, true);
+  assert.equal(result.results[1].isCorrect, false);
+  assert.equal(result.results[3].isCorrect, false);
+  assert.ok(result.results[0].explanation);
+});
+
+test("invalid quiz answers receive a client error", async () => {
+  for (const body of [null, {}, { answers: { unknown: "a" } }, { answers: { q1: "unknown" } }]) {
+    const response = await fetch(`${baseUrl}/api/quiz/submit`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body)
     });
-
     assert.equal(response.status, 400);
-    assert.match((await response.json()).error, /title must be/);
+    assert.ok((await response.json()).error);
   }
 });
 
 test("malformed JSON receives a client error", async () => {
-  const response = await fetch(`${baseUrl}/api/tasks`, {
+  const response = await fetch(`${baseUrl}/api/quiz/submit`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: "{"
@@ -68,4 +82,10 @@ test("malformed JSON receives a client error", async () => {
 
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: "Request body must be valid JSON" });
+});
+
+test("unknown routes return not found", async () => {
+  const response = await fetch(`${baseUrl}/api/tasks`);
+  assert.equal(response.status, 404);
+  assert.deepEqual(await response.json(), { error: "Not found" });
 });

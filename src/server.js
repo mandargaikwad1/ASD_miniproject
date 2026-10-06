@@ -1,8 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import { pathToFileURL } from "node:url";
+import { getPublicQuiz, gradeQuiz, quiz } from "./quiz.js";
 
 const maxBodyBytes = 1024 * 1024;
+const indexPageUrl = new URL("../public/index.html", import.meta.url);
 
 function sendJson(response, statusCode, body) {
   response.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" });
@@ -32,52 +34,62 @@ async function readJson(request) {
   }
 }
 
-export function createServer() {
-  const tasks = [];
+function validateAnswers(body) {
+  if (body === null || typeof body !== "object" || Array.isArray(body) ||
+      body.answers === null || typeof body.answers !== "object" || Array.isArray(body.answers)) {
+    return "answers must be an object mapping question IDs to option IDs";
+  }
 
+  const questionById = new Map(quiz.questions.map((question) => [question.id, question]));
+  for (const [questionId, optionId] of Object.entries(body.answers)) {
+    const question = questionById.get(questionId);
+    if (!question || typeof optionId !== "string" ||
+        !question.options.some((option) => option.id === optionId)) {
+      return `Invalid question or option: ${questionId}`;
+    }
+  }
+
+  return null;
+}
+
+export function createServer() {
   return createHttpServer(async (request, response) => {
     const url = new URL(request.url, "http://localhost");
 
     try {
+      if (request.method === "GET" && url.pathname === "/") {
+        const page = await readFile(indexPageUrl);
+        response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+        response.end(page);
+        return;
+      }
+
       if (request.method === "GET" && url.pathname === "/healthz") {
         sendJson(response, 200, { status: "ok" });
         return;
       }
 
-      if (request.method === "GET" && url.pathname === "/api/tasks") {
-        sendJson(response, 200, { tasks });
+      if (request.method === "GET" && url.pathname === "/api/quiz") {
+        sendJson(response, 200, getPublicQuiz());
         return;
       }
 
-      if (request.method === "POST" && url.pathname === "/api/tasks") {
+      if (request.method === "POST" && url.pathname === "/api/quiz/submit") {
         const body = await readJson(request);
-        if (body === null || typeof body !== "object" || typeof body.title !== "string" ||
-            !body.title.trim() || body.title.trim().length > 120) {
-          sendJson(response, 400, { error: "title must be a non-empty string of at most 120 characters" });
+        const validationError = validateAnswers(body);
+        if (validationError) {
+          sendJson(response, 400, { error: validationError });
           return;
         }
 
-        const task = {
-          id: randomUUID(),
-          title: body.title.trim(),
-          createdAt: new Date().toISOString()
-        };
-        tasks.push(task);
-        sendJson(response, 201, { task });
-        return;
-      }
-
-      const taskMatch = url.pathname.match(/^\/api\/tasks\/([0-9a-f-]+)$/i);
-      if (request.method === "DELETE" && taskMatch) {
-        const taskIndex = tasks.findIndex((task) => task.id === taskMatch[1]);
-        if (taskIndex === -1) {
-          sendJson(response, 404, { error: "Task not found" });
-          return;
-        }
-
-        tasks.splice(taskIndex, 1);
-        response.writeHead(204);
-        response.end();
+        const results = gradeQuiz(body.answers);
+        const score = results.filter((result) => result.isCorrect).length;
+        sendJson(response, 200, {
+          score,
+          total: quiz.questions.length,
+          percentage: Math.round((score / quiz.questions.length) * 100),
+          results
+        });
         return;
       }
 
@@ -98,6 +110,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const port = Number(process.env.PORT ?? 3000);
   const server = createServer();
   server.listen(port, "0.0.0.0", () => {
-    console.log(`Task API listening on port ${port}`);
+    console.log(`Quiz application listening on port ${port}`);
   });
 }

@@ -1,8 +1,8 @@
 {
-  "name": "devops-task-api",
+  "name": "online-quiz-app",
   "version": "1.0.0",
   "private": true,
-  "description": "A small Task API for practicing an end-to-end DevOps pipeline",
+  "description": "An online quiz web application for practicing an end-to-end DevOps pipeline",
   "type": "module",
   "engines": {
     "node": ">=22"

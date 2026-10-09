@@ -1,8 +1,9 @@
 services:
   quiz-app:
     build: .
+    image: "${QUIZ_IMAGE:-online-quiz-app:local}"
     ports:
-      - "3000:3000"
+      - "${QUIZ_HOST_PORT:-3000}:3000"
     environment:
       PORT: "3000"
     restart: unless-stopped
